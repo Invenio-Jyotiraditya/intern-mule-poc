@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="073cf0b5-7ba7-49ed-8e6e-af95a2d91853" >
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<sftp:config name="SFTP_Config" doc:name="SFTP Config" doc:id="7ff1dc71-7749-47ee-95e1-27d99ced40bd" >
+		<sftp:connection host="192.168.4.138" username="invenio" password="Invenio" />
+	</sftp:config>
+	<flow name="emp-db-poc3Flow" doc:id="c8006f47-48d0-4903-9bc3-261b8f3dda6b" >
+		<scheduler doc:name="Scheduler" doc:id="e1d6a34e-c70e-4254-83c0-3fffe0135a72" >
+			<scheduling-strategy >
+				<cron expression="* 5 * ? * * *" />
+			</scheduling-strategy>
+		</scheduler>
+		<sftp:read doc:name="read-data" doc:id="efd678fc-7c6a-4046-89f6-b96fff39f4be" config-ref="SFTP_Config" path="/orders/details_employee_db.json"/>
+		<choice doc:name="Choice" doc:id="ae8ce792-a989-4d1b-8f4d-95fdf8313975" >
+			<when expression='payload.status == "success"'>
+				<logger level="INFO" doc:name="Logger" doc:id="25282c4d-54e5-4ff8-974d-ec32fd55daf1" message="#[payload]" />
+				<ee:transform doc:name="store-payload-from-sftp" doc:id="a178a233-cc49-4f64-a4f8-f6336df3d655">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<sftp:write doc:name="write-into-order-folder" doc:id="413989ac-90e6-4de8-a0f2-b9a82dc57521" config-ref="SFTP_Config" path="/orders/processed/details_employee_db.json" />
+				<ee:transform doc:name="Transform Message" doc:id="94030c81-a202-4399-927e-4f30ec890091">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload.data filter ($.employee_age > 60) map {
+	"no": $.id,
+	"name": ($.employee_name splitBy " ")[0],
+	"age": $.employee_age,
+	"salary": `$` ++ $.employee_salary as String
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<flow-ref doc:name="Flow Reference" doc:id="bc547e34-e294-4111-a29d-94398deea733" name="emp-db-entryFlow" />
+			</when>
+			<otherwise >
+				<ee:transform doc:name="rrormessage" doc:id="0c12b28c-730a-43a2-b1fd-952108017b25" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+
+{
+	"Message": "Failed to connect to the sftp server"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
